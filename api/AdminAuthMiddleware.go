@@ -1,6 +1,7 @@
 package api
 
 import (
+	"log"
 	"net/http"
 
 	"github.com/komari-monitor/komari/database/accounts"
@@ -76,25 +77,39 @@ func tryCloudflareAccessAuth(c *gin.Context) (uuid, session string) {
 	// Try to get user by Cloudflare Access email
 	user, err := accounts.GetUserByCloudflareAccess(claims.Email)
 	if err != nil {
+		log.Printf("DEBUG: User not found for email %s, creating new user: %v", claims.Email, err)
 		// User not found, create a new one
 		user, err = accounts.CreateCloudflareAccessUser(claims.Email, claims.Sub)
 		if err != nil {
+			log.Printf("DEBUG: Failed to create user: %v", err)
 			return "", ""
 		}
+		log.Printf("DEBUG: Created new user with UUID: %s", user.UUID)
+	} else {
+		log.Printf("DEBUG: Found existing user with UUID: %s", user.UUID)
 	}
 
 	// Check if user has an active session
 	sessions, err := accounts.GetUserSessions(user.UUID)
+	if err != nil {
+		log.Printf("DEBUG: Error getting user sessions: %v", err)
+	}
+	log.Printf("DEBUG: Found %d existing sessions for user %s", len(sessions), user.UUID)
+	
 	if err != nil || len(sessions) == 0 {
 		// Create new session
+		log.Printf("DEBUG: Creating new session for user %s", user.UUID)
 		session, err := accounts.CreateSession(user.UUID, 2592000, c.Request.UserAgent(), c.ClientIP(), "cloudflare_access")
 		if err != nil {
+			log.Printf("DEBUG: Failed to create session: %v", err)
 			return "", ""
 		}
+		log.Printf("DEBUG: Created new session: %s", session)
 		c.SetCookie("session_token", session, 2592000, "/", "", false, true)
 		return user.UUID, session
 	}
 
 	// Use existing session
+	log.Printf("DEBUG: Using existing session: %s", sessions[0].Session)
 	return user.UUID, sessions[0].Session
 }
