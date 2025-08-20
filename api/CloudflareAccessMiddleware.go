@@ -48,8 +48,12 @@ func CloudflareAccessMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		// Get JWT from header
+		// Get JWT from header or cookie
 		token := c.GetHeader("Cf-Access-Jwt-Assertion")
+		if token == "" {
+			// 如果请求头中没有，尝试从 cookie 中获取
+			token, _ = c.Cookie("CF_Authorization")
+		}
 		if token == "" {
 			c.Next()
 			return

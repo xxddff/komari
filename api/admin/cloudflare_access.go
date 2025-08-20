@@ -24,8 +24,12 @@ func BindCloudflareAccess(c *gin.Context) {
 		return
 	}
 
-	// 获取 Cloudflare Access JWT
+	// 获取 Cloudflare Access JWT (从请求头或 cookie)
 	token := c.GetHeader("Cf-Access-Jwt-Assertion")
+	if token == "" {
+		// 如果请求头中没有，尝试从 cookie 中获取
+		token, _ = c.Cookie("CF_Authorization")
+	}
 	if token == "" {
 		api.RespondError(c, 400, "No Cloudflare Access token found. Please access this page through Cloudflare Access.")
 		return
@@ -92,8 +96,12 @@ func GetCloudflareAccessStatus(c *gin.Context) {
 		return
 	}
 
-	// 检查是否有 Cloudflare Access JWT
+	// 检查是否有 Cloudflare Access JWT (从请求头或 cookie)
 	token := c.GetHeader("Cf-Access-Jwt-Assertion")
+	if token == "" {
+		// 如果请求头中没有，尝试从 cookie 中获取
+		token, _ = c.Cookie("CF_Authorization")
+	}
 	var currentAccessEmail string
 	if token != "" && cfg.CloudflareAccessEnabled {
 		claims, err := api.ValidateCloudflareAccessJWT(token, cfg.CloudflareAccessTeamName, cfg.CloudflareAccessAudience)
