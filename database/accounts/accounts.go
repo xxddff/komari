@@ -181,3 +181,86 @@ func UpdateUser(uuid string, name, password, sso_type *string) error {
 	}
 	return nil
 }
+
+// GetUserByCloudflareAccess 通过 Cloudflare Access email 获取用户
+func GetUserByCloudflareAccess(email string) (user models.User, err error) {
+	db := dbcore.GetDBInstance()
+	
+	// 查找 SSO 类型为 cloudflare_access 且 SSO ID 为 email 的用户
+	err = db.Where("sso_type = ? AND sso_id = ?", "cloudflare_access", email).First(&user).Error
+	if err != nil {
+		return models.User{}, fmt.Errorf("Cloudflare Access user not found: %s", email)
+	}
+	
+	return user, nil
+}
+
+// CreateCloudflareAccessUser 创建 Cloudflare Access 用户
+func CreateCloudflareAccessUser(email, sub string) (user models.User, err error) {
+	db := dbcore.GetDBInstance()
+	
+	// 使用 email 作为用户名，生成随机密码（不会被使用）
+	hashedPassword := hashPasswd(utils.GeneratePassword())
+	
+	user = models.User{
+		UUID:      uuid.New().String(),
+		Username:  email,
+		Passwd:    hashedPassword,
+		SSOType:   "cloudflare_access",
+		SSOID:     email,
+		CreatedAt: models.FromTime(time.Now()),
+		UpdatedAt: models.FromTime(time.Now()),
+	}
+	
+	err = db.Create(&user).Error
+	if err != nil {
+		return models.User{}, err
+	}
+	
+	return user, nil
+}
+
+// BindCloudflareAccess 绑定 Cloudflare Access 到现有用户
+func BindCloudflareAccess(uuid, email string) error {
+	db := dbcore.GetDBInstance()
+	
+	// 检查是否已有其他用户绑定了这个 email
+	var existingUser models.User
+	result := db.Where("sso_type = ? AND sso_id = ?", "cloudflare_access", email).First(&existingUser)
+	if result.Error == nil && existingUser.UUID != uuid {
+		return fmt.Errorf("this Cloudflare Access account is already bound to another user")
+	}
+	
+	// 绑定到指定用户
+	err := db.Model(&models.User{}).Where("uuid = ?", uuid).Updates(map[string]interface{}{
+		"sso_type": "cloudflare_access",
+		"sso_id":   email,
+	}).Error
+	
+	return err
+}
+
+// UnbindCloudflareAccess 解绑 Cloudflare Access
+func UnbindCloudflareAccess(uuid string) error {
+	db := dbcore.GetDBInstance()
+	
+	err := db.Model(&models.User{}).Where("uuid = ? AND sso_type = ?", uuid, "cloudflare_access").Updates(map[string]interface{}{
+		"sso_type": "",
+		"sso_id":   "",
+	}).Error
+	
+	return err
+}
+
+// GetUserSessions 获取用户的所有会话
+func GetUserSessions(uuid string) ([]models.Session, error) {
+	db := dbcore.GetDBInstance()
+	var sessions []models.Session
+	
+	err := db.Where("uuid = ? AND expires > ?", uuid, time.Now()).Find(&sessions).Error
+	if err != nil {
+		return nil, err
+	}
+	
+	return sessions, nil
+}

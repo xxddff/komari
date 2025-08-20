@@ -16,6 +16,10 @@ type Config struct {
 	OAuthEnabled         bool   `json:"o_auth_enabled" gorm:"default:false"`
 	OAuthProvider        string `json:"o_auth_provider" gorm:"type:varchar(50);default:'github'"`
 	DisablePasswordLogin bool   `json:"disable_password_login" gorm:"default:false"`
+	// Cloudflare Access 配置
+	CloudflareAccessEnabled  bool   `json:"cloudflare_access_enabled" gorm:"default:false"`
+	CloudflareAccessTeamName string `json:"cloudflare_access_team_name" gorm:"type:varchar(100);default:''"`
+	CloudflareAccessAudience string `json:"cloudflare_access_audience" gorm:"type:varchar(255);default:''"`
 	// 自定义美化
 	CustomHead string `json:"custom_head" gorm:"type:longtext"`
 	CustomBody string `json:"custom_body" gorm:"type:longtext"`

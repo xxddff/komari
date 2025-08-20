@@ -250,6 +250,13 @@ func RunServer() {
 			oauth2Group.GET("/bind", admin.BindingExternalAccount)
 			oauth2Group.POST("/unbind", admin.UnbindExternalAccount)
 		}
+		// cloudflare access
+		cloudflareAccessGroup := adminAuthrized.Group("/cloudflare_access")
+		{
+			cloudflareAccessGroup.POST("/bind", admin.BindCloudflareAccess)
+			cloudflareAccessGroup.POST("/unbind", admin.UnbindCloudflareAccess)
+			cloudflareAccessGroup.GET("/status", admin.GetCloudflareAccessStatus)
+		}
 		sessionGroup := adminAuthrized.Group("/session")
 		{
 			sessionGroup.GET("/get", admin.GetSessions)
