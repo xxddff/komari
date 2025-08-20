@@ -76,7 +76,11 @@ func tryCloudflareAccessAuth(c *gin.Context) (uuid, session string) {
 	// Try to get user by Cloudflare Access email
 	user, err := accounts.GetUserByCloudflareAccess(claims.Email)
 	if err != nil {
-		return "", ""
+		// User not found, create a new one
+		user, err = accounts.CreateCloudflareAccessUser(claims.Email, claims.Sub)
+		if err != nil {
+			return "", ""
+		}
 	}
 
 	// Check if user has an active session
