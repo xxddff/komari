@@ -1,6 +1,8 @@
 package admin
 
 import (
+	"log"
+
 	"github.com/gin-gonic/gin"
 	"github.com/komari-monitor/komari/api"
 	"github.com/komari-monitor/komari/database/accounts"
@@ -98,16 +100,24 @@ func GetCloudflareAccessStatus(c *gin.Context) {
 
 	// 检查是否有 Cloudflare Access JWT (从请求头或 cookie)
 	token := c.GetHeader("Cf-Access-Jwt-Assertion")
+	log.Printf("DEBUG: Cf-Access-Jwt-Assertion header: %s", token)
 	if token == "" {
 		// 如果请求头中没有，尝试从 cookie 中获取
 		token, _ = c.Cookie("CF_Authorization")
+		log.Printf("DEBUG: CF_Authorization cookie: %s", token)
 	}
 	var currentAccessEmail string
 	if token != "" && cfg.CloudflareAccessEnabled {
+		log.Printf("DEBUG: Validating JWT with team: %s, audience: %s", cfg.CloudflareAccessTeamName, cfg.CloudflareAccessAudience)
 		claims, err := api.ValidateCloudflareAccessJWT(token, cfg.CloudflareAccessTeamName, cfg.CloudflareAccessAudience)
 		if err == nil {
 			currentAccessEmail = claims.Email
+			log.Printf("DEBUG: JWT validation successful, email: %s", currentAccessEmail)
+		} else {
+			log.Printf("DEBUG: JWT validation failed: %v", err)
 		}
+	} else {
+		log.Printf("DEBUG: No token or Cloudflare Access not enabled. Token empty: %v, Enabled: %v", token == "", cfg.CloudflareAccessEnabled)
 	}
 
 	status := gin.H{
