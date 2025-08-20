@@ -18,12 +18,12 @@ import (
 )
 
 type CloudflareAccessClaims struct {
-	Aud   string `json:"aud"`
-	Email string `json:"email"`
-	Exp   int64  `json:"exp"`
-	Iat   int64  `json:"iat"`
-	Iss   string `json:"iss"`
-	Sub   string `json:"sub"`
+	Aud   interface{} `json:"aud"` // 可以是字符串或字符串数组
+	Email string      `json:"email"`
+	Exp   int64       `json:"exp"`
+	Iat   int64       `json:"iat"`
+	Iss   string      `json:"iss"`
+	Sub   string      `json:"sub"`
 }
 
 type CloudflareAccessPublicKey struct {
@@ -143,7 +143,8 @@ func ValidateCloudflareAccessJWT(tokenString, teamName, audience string) (*Cloud
 		return nil, fmt.Errorf("JWT token expired")
 	}
 
-	if claims.Aud != audience {
+	// 验证 audience（可能是字符串或字符串数组）
+	if !validateAudience(claims.Aud, audience) {
 		return nil, fmt.Errorf("invalid audience")
 	}
 
@@ -228,4 +229,28 @@ func sha256Hash(data []byte) []byte {
 	h := sha256.New()
 	h.Write(data)
 	return h.Sum(nil)
+}
+
+// validateAudience 验证 audience 字段（支持字符串或字符串数组）
+func validateAudience(audClaim interface{}, expectedAudience string) bool {
+	switch aud := audClaim.(type) {
+	case string:
+		return aud == expectedAudience
+	case []interface{}:
+		for _, a := range aud {
+			if str, ok := a.(string); ok && str == expectedAudience {
+				return true
+			}
+		}
+		return false
+	case []string:
+		for _, a := range aud {
+			if a == expectedAudience {
+				return true
+			}
+		}
+		return false
+	default:
+		return false
+	}
 }
