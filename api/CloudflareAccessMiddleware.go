@@ -49,21 +49,25 @@ func CloudflareAccessMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		// 验证 audience（可选的额外安全检查）
-		trustedDomain := os.Getenv("KOMARI_CF_ACCESS_TRUSTED_DOMAIN")
-		if trustedDomain != "" {
-			audienceValid := false
-			for _, aud := range claims.Aud {
-				if aud == trustedDomain {
-					audienceValid = true
-					break
-				}
+		// 验证 audience
+		expectedAudience := os.Getenv("KOMARI_CF_ACCESS_AUDIENCE")
+		if expectedAudience == "" {
+			log.Printf("Cloudflare Access: KOMARI_CF_ACCESS_AUDIENCE environment variable not set")
+			c.Next()
+			return
+		}
+		
+		audienceValid := false
+		for _, aud := range claims.Aud {
+			if aud == expectedAudience {
+				audienceValid = true
+				break
 			}
-			if !audienceValid {
-				log.Printf("Cloudflare Access: Untrusted audience. Expected: %s, Got: %v", trustedDomain, claims.Aud)
-				c.Next()
-				return
-			}
+		}
+		if !audienceValid {
+			log.Printf("Cloudflare Access: Invalid audience. Expected: %s, Got: %v", expectedAudience, claims.Aud)
+			c.Next()
+			return
 		}
 
 		// 检查是否已经有有效的 session
