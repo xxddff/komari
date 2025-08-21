@@ -105,20 +105,13 @@ func getUserByEmail(email string) (string, error) {
 	// 不允许自动登入
 	if adminEmail == "" || strings.ToLower(email) != strings.ToLower(adminEmail) {
 		log.Printf("Cloudflare Access: Email %s is not configured as admin email", email)
-		return "", &UnauthorizedError{Message: "Email not authorized for access"}
+		return "", fmt.Errorf("Email not authorized for access")
 	}
 	
-	return "", &UnauthorizedError{Message: "No admin user found"}
+	// 这里实际上不会到达，但为了编译通过
+	return "", fmt.Errorf("No admin user found")
 }
 
-// UnauthorizedError 自定义错误类型
-type UnauthorizedError struct {
-	Message string
-}
-
-func (e *UnauthorizedError) Error() string {
-	return e.Message
-}
 
 // CloudflareAccessClaims JWT claims 结构
 type CloudflareAccessClaims struct {

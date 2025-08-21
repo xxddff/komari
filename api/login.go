@@ -82,7 +82,7 @@ func Logout(c *gin.Context) {
 	teamName := os.Getenv("KOMARI_CF_ACCESS_TEAM_NAME")
 	
 	if cfAccessEnabled && teamName != "" {
-		// Cloudflare Access 完整退出，退出后重定向回根目录
+		// 同时退出Cloudflare Access，退出后重定向回根目录
 		auditlog.Log(c.ClientIP(), "", "logged out (Cloudflare Access)", "logout")
 		// 构建当前域名的根目录 URL
 		scheme := "https"
