@@ -35,7 +35,17 @@ func CloudflareAccessMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		// 验证 JWT token
+		// 先检查是否已经有有效的 session，避免不必要的 JWT 验证
+		if session, err := c.Cookie("session_token"); err == nil {
+			if _, err := accounts.GetSession(session); err == nil {
+				// 已经有有效session，更新最后活动时间并继续
+				accounts.UpdateLatest(session, c.Request.UserAgent(), c.ClientIP())
+				c.Next()
+				return
+			}
+		}
+
+		// 只有在没有有效 session 时才验证 JWT token
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 		defer cancel()
 		
@@ -44,16 +54,6 @@ func CloudflareAccessMiddleware() gin.HandlerFunc {
 			log.Printf("Cloudflare Access: JWT validation failed: %v", err)
 			c.Next()
 			return
-		}
-
-		// 检查是否已经有有效的 session
-		if session, err := c.Cookie("session_token"); err == nil {
-			if _, err := accounts.GetSession(session); err == nil {
-				// 已经有有效session，更新最后活动时间并继续
-				accounts.UpdateLatest(session, c.Request.UserAgent(), c.ClientIP())
-				c.Next()
-				return
-			}
 		}
 
 		// 尝试根据邮箱获取用户
