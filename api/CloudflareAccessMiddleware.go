@@ -54,7 +54,7 @@ func CloudflareAccessMiddleware() gin.HandlerFunc {
 		}
 
 		// 尝试根据邮箱获取用户
-		uuid, err := getOrCreateUserByEmail(userEmail)
+		uuid, err := getUserByEmail(userEmail)
 		if err != nil {
 			log.Printf("Cloudflare Access: Failed to get user for email %s: %v", userEmail, err)
 			c.Next()
@@ -81,8 +81,8 @@ func CloudflareAccessMiddleware() gin.HandlerFunc {
 	}
 }
 
-// getOrCreateUserByEmail 根据邮箱获取用户
-func getOrCreateUserByEmail(email string) (string, error) {
+// getUserByEmail 根据邮箱获取用户
+func getUserByEmail(email string) (string, error) {
 	// 获取默认管理员邮箱配置
 	adminEmail := os.Getenv("KOMARI_CF_ACCESS_ADMIN_EMAIL")
 	
