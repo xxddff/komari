@@ -59,10 +59,14 @@ func OAuthCallback(c *gin.Context) {
 	}
 	
 	// 特殊处理 Cloudflare Access
+	fmt.Printf("DEBUG: Current provider: %s, cloudflare_access param: %s\n", oauth.CurrentProvider().GetName(), queries["cloudflare_access"])
 	if oauth.CurrentProvider().GetName() == "cloudflare" && queries["cloudflare_access"] == "true" {
+		fmt.Printf("DEBUG: Cloudflare Access callback detected\n")
 		// 从请求头获取 JWT token
 		jwtToken := c.GetHeader("Cf-Access-Jwt-Assertion")
+		fmt.Printf("DEBUG: JWT token present: %t\n", jwtToken != "")
 		if jwtToken == "" {
+			fmt.Printf("DEBUG: Missing JWT token in header\n")
 			c.JSON(400, gin.H{"status": "error", "error": "Missing Cloudflare Access JWT token"})
 			return
 		}
