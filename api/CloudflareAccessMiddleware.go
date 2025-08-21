@@ -2,26 +2,35 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
-	"os"
-	"strings"
 	"time"
 
-	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/gin-gonic/gin"
 	"github.com/komari-monitor/komari/database/accounts"
 	"github.com/komari-monitor/komari/database/auditlog"
+	"github.com/komari-monitor/komari/database/config"
+	"github.com/komari-monitor/komari/database"
 	"github.com/komari-monitor/komari/database/dbcore"
 	"github.com/komari-monitor/komari/database/models"
+	"github.com/komari-monitor/komari/utils/oauth/cloudflare"
+	"github.com/komari-monitor/komari/utils/oauth/factory"
 )
 
 // CloudflareAccessMiddleware 处理 Cloudflare Access 认证
 func CloudflareAccessMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// 检查是否启用了 Cloudflare Access
-		cfAccessEnabled := strings.ToLower(os.Getenv("KOMARI_CF_ACCESS_ENABLED")) == "true"
-		if !cfAccessEnabled {
+		// 从数据库获取配置
+		cfg, err := config.Get()
+		if err != nil {
+			log.Printf("Cloudflare Access: Failed to get config: %v", err)
+			c.Next()
+			return
+		}
+
+		// 检查是否启用了 Cloudflare Access 且配置为 cloudflare 提供商
+		if !cfg.OAuthEnabled || cfg.OAuthProvider != "cloudflare" {
 			c.Next()
 			return
 		}
@@ -45,19 +54,35 @@ func CloudflareAccessMiddleware() gin.HandlerFunc {
 			}
 		}
 
+		// 获取 Cloudflare Access 提供商配置
+		provider, err := getCloudflareProvider()
+		if err != nil {
+			log.Printf("Cloudflare Access: Failed to get provider: %v", err)
+			c.Next()
+			return
+		}
+		
+		// 从数据库加载配置
+		err = loadCloudflareConfig(provider)
+		if err != nil {
+			log.Printf("Cloudflare Access: Failed to load config: %v", err)
+			c.Next()
+			return
+		}
+
 		// 只有在没有有效 session 时才验证 JWT token
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 		defer cancel()
 		
-		claims, err := validateCloudflareJWT(ctx, jwtToken)
+		claims, err := provider.ValidateJWT(ctx, jwtToken)
 		if err != nil {
 			log.Printf("Cloudflare Access: JWT validation failed: %v", err)
 			c.Next()
 			return
 		}
 
-		// 尝试根据邮箱获取用户
-		uuid, err := getUserByEmail(claims.Email)
+		// 尝试根据邮箱获取或创建用户绑定
+		uuid, err := getOrCreateUserByEmail(claims.Email)
 		if err != nil {
 			log.Printf("Cloudflare Access: Failed to get user for email %s: %v", claims.Email, err)
 			c.Next()
@@ -84,75 +109,68 @@ func CloudflareAccessMiddleware() gin.HandlerFunc {
 	}
 }
 
-// getUserByEmail 根据邮箱获取用户
-func getUserByEmail(email string) (string, error) {
-	// 获取默认管理员邮箱配置
-	adminEmail := os.Getenv("KOMARI_CF_ACCESS_ADMIN_EMAIL")
+// getCloudflareProvider 获取 Cloudflare Access 提供商实例
+func getCloudflareProvider() (*cloudflare.CloudflareAccess, error) {
+	constructor, exists := factory.GetConstructor("cloudflare")
+	if !exists {
+		return nil, fmt.Errorf("cloudflare provider not found")
+	}
 	
-	// CloudFlare Access登入邮箱匹配
-	if adminEmail != "" && strings.ToLower(email) == strings.ToLower(adminEmail) {
-		// 获取第一个用户（默认管理员）
-		db := dbcore.GetDBInstance()
-		var user models.User
-		err := db.First(&user).Error
-		if err != nil {
-			return "", err
-		}
+	provider := constructor().(*cloudflare.CloudflareAccess)
+	return provider, nil
+}
+
+// getOrCreateUserByEmail 根据邮箱获取用户，如果是通过 Cloudflare Access 认证的用户，自动创建绑定
+func getOrCreateUserByEmail(email string) (string, error) {
+	// 生成 SSO ID
+	ssoID := fmt.Sprintf("cloudflare_%s", email)
+	
+	// 尝试通过 SSO ID 获取用户
+	user, err := accounts.GetUserBySSO(ssoID)
+	if err == nil {
+		// 用户已存在，返回 UUID
 		return user.UUID, nil
 	}
 	
-	// 对于非管理员邮箱，或空
-	// 不允许自动登入
-	if adminEmail == "" || strings.ToLower(email) != strings.ToLower(adminEmail) {
-		log.Printf("Cloudflare Access: Email %s is not configured as admin email", email)
-		return "", fmt.Errorf("Email not authorized for access")
-	}
-	
-	// 这里实际上不会到达，但为了编译通过
-	return "", fmt.Errorf("No admin user found")
-}
-
-
-// CloudflareAccessClaims JWT claims 结构
-type CloudflareAccessClaims struct {
-	Email string `json:"email"`
-}
-
-// validateCloudflareJWT 验证 Cloudflare Access JWT token
-func validateCloudflareJWT(ctx context.Context, token string) (*CloudflareAccessClaims, error) {
-	// 获取环境变量
-	teamName := os.Getenv("KOMARI_CF_ACCESS_TEAM_NAME")
-	if teamName == "" {
-		return nil, fmt.Errorf("KOMARI_CF_ACCESS_TEAM_NAME environment variable not set")
-	}
-	
-	audience := os.Getenv("KOMARI_CF_ACCESS_AUDIENCE")
-	if audience == "" {
-		return nil, fmt.Errorf("KOMARI_CF_ACCESS_AUDIENCE environment variable not set")
-	}
-
-	// 构建验证器
-	teamDomain := fmt.Sprintf("https://%s.cloudflareaccess.com", teamName)
-	certsURL := fmt.Sprintf("%s/cdn-cgi/access/certs", teamDomain)
-
-	config := &oidc.Config{
-		ClientID: audience,
-	}
-
-	keySet := oidc.NewRemoteKeySet(ctx, certsURL)
-	verifier := oidc.NewVerifier(teamDomain, keySet, config)
-
-	// 验证 JWT token
-	idToken, err := verifier.Verify(ctx, token)
+	// 用户不存在，需要先有管理员账户才能自动绑定
+	// 获取第一个用户（默认管理员）
+	db := dbcore.GetDBInstance()
+	var adminUser models.User
+	err = db.First(&adminUser).Error
 	if err != nil {
-		return nil, fmt.Errorf("token verification failed: %v", err)
+		return "", fmt.Errorf("no admin user found, please create an admin account first")
 	}
-
-	// 解析 claims
-	var claims CloudflareAccessClaims
-	if err := idToken.Claims(&claims); err != nil {
-		return nil, fmt.Errorf("failed to parse claims: %v", err)
+	
+	// 自动为管理员绑定 Cloudflare Access 账户
+	err = accounts.BindingExternalAccount(adminUser.UUID, ssoID)
+	if err != nil {
+		return "", fmt.Errorf("failed to bind external account: %v", err)
 	}
+	
+	log.Printf("Cloudflare Access: Auto-bound email %s to admin account %s", email, adminUser.UUID)
+	return adminUser.UUID, nil
+}
 
-	return &claims, nil
+// loadCloudflareConfig 从数据库加载 Cloudflare Access 配置
+func loadCloudflareConfig(provider *cloudflare.CloudflareAccess) error {
+	cfConfig, err := database.GetOidcConfigByName("cloudflare")
+	if err != nil {
+		return fmt.Errorf("cloudflare config not found: %v", err)
+	}
+	
+	if cfConfig.Addition == "" {
+		return fmt.Errorf("cloudflare config is empty")
+	}
+	
+	// 解析配置
+	err = json.Unmarshal([]byte(cfConfig.Addition), &provider.Addition)
+	if err != nil {
+		return fmt.Errorf("failed to parse cloudflare config: %v", err)
+	}
+	
+	if provider.Addition.TeamName == "" || provider.Addition.Audience == "" {
+		return fmt.Errorf("cloudflare config incomplete: team_name and audience are required")
+	}
+	
+	return nil
 }

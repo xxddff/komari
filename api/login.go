@@ -6,12 +6,11 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
-	"strings"
 
 	"github.com/komari-monitor/komari/database/accounts"
 	"github.com/komari-monitor/komari/database/auditlog"
 	"github.com/komari-monitor/komari/database/config"
+	"github.com/komari-monitor/komari/database"
 
 	"github.com/gin-gonic/gin"
 )
@@ -78,21 +77,29 @@ func Logout(c *gin.Context) {
 	c.SetCookie("session_token", "", -1, "/", "", false, true)
 	
 	// 检查是否启用了 Cloudflare Access
-	cfAccessEnabled := strings.ToLower(os.Getenv("KOMARI_CF_ACCESS_ENABLED")) == "true"
-	teamName := os.Getenv("KOMARI_CF_ACCESS_TEAM_NAME")
-	
-	if cfAccessEnabled && teamName != "" {
-		// 同时退出Cloudflare Access，退出后重定向回根目录
-		auditlog.Log(c.ClientIP(), "", "logged out (Cloudflare Access)", "logout")
-		// 构建当前域名的根目录 URL
-		scheme := "https"
-		if c.Request.TLS == nil {
-			scheme = "http"
+	cfg, _ := config.Get()
+	if cfg.OAuthEnabled && cfg.OAuthProvider == "cloudflare" {
+		// 获取 Cloudflare Access 配置
+		cfConfig, err := database.GetOidcConfigByName("cloudflare")
+		if err == nil && cfConfig.Addition != "" {
+			// 解析配置获取 team name
+			var addition struct {
+				TeamName string `json:"team_name"`
+			}
+			if json.Unmarshal([]byte(cfConfig.Addition), &addition) == nil && addition.TeamName != "" {
+				// 同时退出Cloudflare Access，退出后重定向回根目录
+				auditlog.Log(c.ClientIP(), "", "logged out (Cloudflare Access)", "logout")
+				// 构建当前域名的根目录 URL
+				scheme := "https"
+				if c.Request.TLS == nil {
+					scheme = "http"
+				}
+				returnTo := fmt.Sprintf("%s://%s/", scheme, c.Request.Host)
+				logoutURL := fmt.Sprintf("https://%s.cloudflareaccess.com/cdn-cgi/access/logout?returnTo=%s", addition.TeamName, url.QueryEscape(returnTo))
+				c.Redirect(302, logoutURL)
+				return
+			}
 		}
-		returnTo := fmt.Sprintf("%s://%s/", scheme, c.Request.Host)
-		logoutURL := fmt.Sprintf("https://%s.cloudflareaccess.com/cdn-cgi/access/logout?returnTo=%s", teamName, url.QueryEscape(returnTo))
-		c.Redirect(302, logoutURL)
-		return
 	}
 	
 	// 普通退出
