@@ -139,6 +139,8 @@ func RunServer() {
 		c.Next()
 	})
 
+	// Cloudflare Access 中间件
+	r.Use(api.CloudflareAccessMiddleware())
 	r.Use(api.PrivateSiteMiddleware())
 
 	r.Use(func(c *gin.Context) {

@@ -2,8 +2,12 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"os"
+	"strings"
 
 	"github.com/komari-monitor/komari/database/accounts"
 	"github.com/komari-monitor/komari/database/auditlog"
@@ -72,6 +76,26 @@ func Logout(c *gin.Context) {
 	session, _ := c.Cookie("session_token")
 	accounts.DeleteSession(session)
 	c.SetCookie("session_token", "", -1, "/", "", false, true)
+	
+	// 检查是否启用了 Cloudflare Access
+	cfAccessEnabled := strings.ToLower(os.Getenv("KOMARI_CF_ACCESS_ENABLED")) == "true"
+	teamName := os.Getenv("KOMARI_CF_ACCESS_TEAM_NAME")
+	
+	if cfAccessEnabled && teamName != "" {
+		// 同时退出Cloudflare Access，退出后重定向回根目录
+		auditlog.Log(c.ClientIP(), "", "logged out (Cloudflare Access)", "logout")
+		// 构建当前域名的根目录 URL
+		scheme := "https"
+		if c.Request.TLS == nil {
+			scheme = "http"
+		}
+		returnTo := fmt.Sprintf("%s://%s/", scheme, c.Request.Host)
+		logoutURL := fmt.Sprintf("https://%s.cloudflareaccess.com/cdn-cgi/access/logout?returnTo=%s", teamName, url.QueryEscape(returnTo))
+		c.Redirect(302, logoutURL)
+		return
+	}
+	
+	// 普通退出
 	auditlog.Log(c.ClientIP(), "", "logged out", "logout")
 	c.Redirect(302, "/")
 }
