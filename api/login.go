@@ -82,15 +82,15 @@ func Logout(c *gin.Context) {
 	teamName := os.Getenv("KOMARI_CF_ACCESS_TEAM_NAME")
 	
 	if cfAccessEnabled && teamName != "" {
-		// Cloudflare Access 完整退出，退出后重定向回首页
+		// Cloudflare Access 完整退出，退出后重定向回根目录
 		auditlog.Log(c.ClientIP(), "", "logged out (Cloudflare Access)", "logout")
-		// 构建当前域名的首页 URL
+		// 构建当前域名的根目录 URL
 		scheme := "https"
 		if c.Request.TLS == nil {
 			scheme = "http"
 		}
-		redirectURL := fmt.Sprintf("%s://%s/", scheme, c.Request.Host)
-		logoutURL := fmt.Sprintf("https://%s.cloudflareaccess.com/cdn-cgi/access/logout?redirect_url=%s", teamName, url.QueryEscape(redirectURL))
+		returnTo := fmt.Sprintf("%s://%s/", scheme, c.Request.Host)
+		logoutURL := fmt.Sprintf("https://%s.cloudflareaccess.com/cdn-cgi/access/logout?returnTo=%s", teamName, url.QueryEscape(returnTo))
 		c.Redirect(302, logoutURL)
 		return
 	}
