@@ -9,6 +9,7 @@ import (
 	"github.com/komari-monitor/komari/database/config"
 	"github.com/komari-monitor/komari/utils"
 	"github.com/komari-monitor/komari/utils/oauth"
+	"github.com/komari-monitor/komari/utils/oauth/factory"
 )
 
 // /api/oauth
@@ -56,6 +57,71 @@ func OAuthCallback(c *gin.Context) {
 			queries[key] = values[0]
 		}
 	}
+	
+	// 特殊处理 Cloudflare Access
+	if oauth.CurrentProvider().GetName() == "cloudflare" && queries["cloudflare_access"] == "true" {
+		// 从请求头获取 JWT token
+		jwtToken := c.GetHeader("Cf-Access-Jwt-Assertion")
+		if jwtToken == "" {
+			c.JSON(400, gin.H{"status": "error", "error": "Missing Cloudflare Access JWT token"})
+			return
+		}
+		
+		// 获取 Cloudflare 提供商并验证 JWT
+		provider, err := getCloudflareProvider()
+		if err != nil {
+			c.JSON(500, gin.H{"status": "error", "error": "Failed to get Cloudflare provider: " + err.Error()})
+			return
+		}
+		
+		// 加载配置
+		err = loadCloudflareConfig(provider)
+		if err != nil {
+			c.JSON(500, gin.H{"status": "error", "error": "Failed to load Cloudflare config: " + err.Error()})
+			return
+		}
+		
+		// 验证 JWT
+		claims, err := provider.ValidateJWT(c.Request.Context(), jwtToken)
+		if err != nil {
+			c.JSON(500, gin.H{"status": "error", "error": "JWT validation failed: " + err.Error()})
+			return
+		}
+		
+		// 构造 oidcUser，使用 email 作为 UserId
+		oidcUser := factory.OidcCallback{
+			UserId: claims.Email,
+		}
+		
+		// 处理绑定逻辑
+		sso_id := fmt.Sprintf("%s_%s", oauth.CurrentProvider().GetName(), oidcUser.UserId)
+		
+		// 如果cookie中有binding_external_account，说明是绑定外部账号
+		uuid, _ := c.Cookie("binding_external_account")
+		c.SetCookie("binding_external_account", "", -1, "/", "", false, true)
+		if uuid != "" {
+			// 绑定外部账号
+			session, _ := c.Cookie("session_token")
+			user, err := accounts.GetUserBySession(session)
+			if err != nil || user.UUID != uuid {
+				c.JSON(500, gin.H{"status": "error", "message": "Binding failed"})
+				return
+			}
+			err = accounts.BindingExternalAccount(user.UUID, sso_id)
+			if err != nil {
+				c.JSON(500, gin.H{"status": "error", "message": "Binding failed"})
+				return
+			}
+			auditlog.Log(c.ClientIP(), user.UUID, "bound external account (OAuth)"+fmt.Sprintf(",sso_id: %s", sso_id), "login")
+			c.Redirect(302, "/manage")
+			return
+		}
+		
+		// 如果不是绑定请求，返回错误（登录由中间件处理）
+		c.JSON(400, gin.H{"status": "error", "error": "Cloudflare Access login should be handled by middleware"})
+		return
+	}
+	
 	oidcUser, err := oauth.CurrentProvider().OnCallback(c.Request.Context(), state, queries, utils.GetCallbackURL(c))
 	if err != nil {
 		c.JSON(500, gin.H{"status": "error", "error": "Failed to get user info: " + err.Error()})
