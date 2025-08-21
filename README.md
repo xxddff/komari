@@ -68,6 +68,40 @@ sudo ./install-komari.sh
 > [!NOTE]
 > Ensure the binary has execute permissions (`chmod +x komari`). Data will be saved in the `data` folder in the running directory.
 
+## Cloudflare Access Integration
+
+Komari supports automatic login through Cloudflare Access. When enabled, users authenticated by Cloudflare Access will be automatically logged into Komari without additional clicks.
+
+### Configuration
+
+Set the following environment variables to enable Cloudflare Access integration:
+
+```bash
+# Enable Cloudflare Access integration
+KOMARI_CF_ACCESS_ENABLED=true
+
+# Set the admin email that should be automatically logged in
+# This email must match the email authenticated by Cloudflare Access
+KOMARI_CF_ACCESS_ADMIN_EMAIL=admin@yourdomain.com
+
+# Optional: Set trusted Cloudflare Access domain for additional security
+KOMARI_CF_ACCESS_TRUSTED_DOMAIN=your-team-name.cloudflareaccess.com
+```
+
+### How it works
+
+1. User accesses Komari through Cloudflare Access
+2. Cloudflare Access authenticates the user and adds headers to the request
+3. Komari reads the `Cf-Access-Authenticated-User-Email` header
+4. If the email matches `KOMARI_CF_ACCESS_ADMIN_EMAIL`, user is automatically logged in
+5. A session is created and the user gains admin access
+
+### Security Notes
+
+- Only the email specified in `KOMARI_CF_ACCESS_ADMIN_EMAIL` will be granted access
+- The integration respects existing sessions and won't interfere with other authentication methods
+- All automatic logins are logged in the audit log
+
 
 ### Manual Build
 
