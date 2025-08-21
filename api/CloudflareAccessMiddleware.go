@@ -207,6 +207,16 @@ func validateCloudflareJWT(token string) (*CloudflareAccessClaims, error) {
 		return nil, fmt.Errorf("failed to parse JWT claims: %v", err)
 	}
 
+	// 验证 issuer
+	teamName := os.Getenv("KOMARI_CF_ACCESS_TEAM_NAME")
+	if teamName == "" {
+		return nil, fmt.Errorf("KOMARI_CF_ACCESS_TEAM_NAME environment variable not set")
+	}
+	expectedIssuer := fmt.Sprintf("https://%s.cloudflareaccess.com", teamName)
+	if claims.Iss != expectedIssuer {
+		return nil, fmt.Errorf("invalid issuer: expected %s, got %s", expectedIssuer, claims.Iss)
+	}
+
 	// 验证时间
 	now := time.Now().Unix()
 	if claims.Exp < now {
