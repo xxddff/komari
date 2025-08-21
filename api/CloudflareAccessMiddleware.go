@@ -49,27 +49,6 @@ func CloudflareAccessMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		// 验证 audience
-		expectedAudience := os.Getenv("KOMARI_CF_ACCESS_AUDIENCE")
-		if expectedAudience == "" {
-			log.Printf("Cloudflare Access: KOMARI_CF_ACCESS_AUDIENCE environment variable not set")
-			c.Next()
-			return
-		}
-		
-		audienceValid := false
-		for _, aud := range claims.Aud {
-			if aud == expectedAudience {
-				audienceValid = true
-				break
-			}
-		}
-		if !audienceValid {
-			log.Printf("Cloudflare Access: Invalid audience. Expected: %s, Got: %v", expectedAudience, claims.Aud)
-			c.Next()
-			return
-		}
-
 		// 检查是否已经有有效的 session
 		if session, err := c.Cookie("session_token"); err == nil {
 			if _, err := accounts.GetSession(session); err == nil {
@@ -219,6 +198,23 @@ func validateCloudflareJWT(token string) (*CloudflareAccessClaims, error) {
 	expectedIssuer := fmt.Sprintf("https://%s.cloudflareaccess.com", teamName)
 	if claims.Iss != expectedIssuer {
 		return nil, fmt.Errorf("invalid issuer: expected %s, got %s", expectedIssuer, claims.Iss)
+	}
+
+	// 验证 audience
+	expectedAudience := os.Getenv("KOMARI_CF_ACCESS_AUDIENCE")
+	if expectedAudience == "" {
+		return nil, fmt.Errorf("KOMARI_CF_ACCESS_AUDIENCE environment variable not set")
+	}
+	
+	audienceValid := false
+	for _, aud := range claims.Aud {
+		if aud == expectedAudience {
+			audienceValid = true
+			break
+		}
+	}
+	if !audienceValid {
+		return nil, fmt.Errorf("invalid audience: expected %s, got %v", expectedAudience, claims.Aud)
 	}
 
 	// 验证时间
