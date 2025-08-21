@@ -43,6 +43,9 @@ func OAuthCallback(c *gin.Context) {
 			c.JSON(400, gin.H{"status": "error", "error": "Invalid state"})
 			return
 		}
+	} else if providerName == "cloudflare" && c.Query("cloudflare_access") == "true" {
+		// 对于 Cloudflare Access，跳过 state 验证，因为它不使用传统的 OAuth 流程
+		// state 验证由 JWT 验证替代
 	} else {
 		// 对于其他提供商，严格验证state匹配
 		if state == "" || state != c.Query("state") {
