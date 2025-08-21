@@ -53,10 +53,10 @@ func CloudflareAccessMiddleware() gin.HandlerFunc {
 			}
 		}
 
-		// 尝试根据邮箱获取或创建用户
+		// 尝试根据邮箱获取用户
 		uuid, err := getOrCreateUserByEmail(userEmail)
 		if err != nil {
-			log.Printf("Cloudflare Access: Failed to get or create user for email %s: %v", userEmail, err)
+			log.Printf("Cloudflare Access: Failed to get user for email %s: %v", userEmail, err)
 			c.Next()
 			return
 		}
@@ -81,14 +81,14 @@ func CloudflareAccessMiddleware() gin.HandlerFunc {
 	}
 }
 
-// getOrCreateUserByEmail 根据邮箱获取或创建用户
+// getOrCreateUserByEmail 根据邮箱获取用户
 func getOrCreateUserByEmail(email string) (string, error) {
 	// 获取默认管理员邮箱配置
 	adminEmail := os.Getenv("KOMARI_CF_ACCESS_ADMIN_EMAIL")
 	
-	// 如果是配置的管理员邮箱，查找现有的管理员账户
+	// CloudFlare Access登入邮箱匹配
 	if adminEmail != "" && strings.ToLower(email) == strings.ToLower(adminEmail) {
-		// 由于 Komari 是单用户系统，获取第一个用户（默认管理员）
+		// 获取第一个用户（默认管理员）
 		db := dbcore.GetDBInstance()
 		var user models.User
 		err := db.First(&user).Error
@@ -98,9 +98,8 @@ func getOrCreateUserByEmail(email string) (string, error) {
 		return user.UUID, nil
 	}
 	
-	// 对于非管理员邮箱，由于 Komari 是单用户系统，
-	// 这里可以选择拒绝访问或者也绑定到管理员账户
-	// 为了安全起见，只有配置的管理员邮箱才能自动登录
+	// 对于非管理员邮箱，或空
+	// 不允许自动登入
 	if adminEmail == "" || strings.ToLower(email) != strings.ToLower(adminEmail) {
 		log.Printf("Cloudflare Access: Email %s is not configured as admin email", email)
 		return "", &UnauthorizedError{Message: "Email not authorized for access"}
