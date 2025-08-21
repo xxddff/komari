@@ -2,12 +2,13 @@ package api
 
 import (
 	"log"
-	"net/http"
 	"os"
 	"strings"
 
 	"github.com/komari-monitor/komari/database/accounts"
 	"github.com/komari-monitor/komari/database/auditlog"
+	"github.com/komari-monitor/komari/database/dbcore"
+	"github.com/komari-monitor/komari/database/models"
 
 	"github.com/gin-gonic/gin"
 )
@@ -87,16 +88,14 @@ func getOrCreateUserByEmail(email string) (string, error) {
 	
 	// 如果是配置的管理员邮箱，查找现有的管理员账户
 	if adminEmail != "" && strings.ToLower(email) == strings.ToLower(adminEmail) {
-		// 获取第一个用户（通常是默认管理员）
-		users, err := accounts.GetAllUsers()
+		// 由于 Komari 是单用户系统，获取第一个用户（默认管理员）
+		db := dbcore.GetDBInstance()
+		var user models.User
+		err := db.First(&user).Error
 		if err != nil {
 			return "", err
 		}
-		
-		if len(users) > 0 {
-			// 返回第一个用户的UUID（默认管理员）
-			return users[0].UUID, nil
-		}
+		return user.UUID, nil
 	}
 	
 	// 对于非管理员邮箱，由于 Komari 是单用户系统，
